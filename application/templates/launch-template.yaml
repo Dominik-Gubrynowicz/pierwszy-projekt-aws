@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template for App launch instance
+
+Parameters:
+  #Project params
+  Project:
+    Description: Name of the project
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,20}$
+  Component:
+    Description: Name of the component
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
+  Stage:
+    Description: Stage Name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{2,15}$
+  #Instance config
+  ImageId:
+    Description: Id of the ami with app
+    Type: AWS::EC2::Image::Id
+  InstanceType:
+    Description: Name of the instance type
+    Type: String
+    Default: t2.micro
+  InstanceRole:
+    Description: Name of the instance role
+    Type: AWS::SSM::Parameter::Value<String>
+  ApplicationSG:
+    Description: The id of the application SG
+    Type: AWS::SSM::Parameter::Value<String>
+  #App config
+  ServiceName:
+    Description: The name of the service
+    Type: String
+  ServiceConfigFile:
+    Description: The name of service config file
+    Type: String
+  CoudWatchConfigFile:
+    Description: The name of the cloudwatch config file
+    Type: String
+  S3ConfigurationBucket:
+    Description: Name of the configuration bucket
+    Type: AWS::SSM::Parameter::Value<String>
+
+Resources: 
+  ApplicationLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${Project}-${Stage}-${Component}-app-instance-launch-template
+      LaunchTemplateData:
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref ApplicationSG
+        Monitoring:
+          Enabled: true
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub ${Project}-${Stage}-${Component}-application-instance
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            aws s3 cp s3://${S3ConfigurationBucket}/cloudwatch/${CoudWatchConfigFile} /opt/aws/amazon-cloudwatch-agent/etc/${CoudWatchConfigFile}
+            sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/${CoudWatchConfigFile} -s
+            aws s3 cp s3://${S3ConfigurationBucket}/service/${ServiceConfigFile} /etc/${ServiceConfigFile}
+            sudo systemctl start ${ServiceName}
+
+  ApplicationLaunchTemplateIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub The SSM parameter that stores ${Project}-${Stage}-${Component} the id of app launch template
+      Name: !Sub /${Project}/${Stage}/${Component}/application-launch-template/id
+      Tier: Standard
+      Type: String
+      Value: !Ref ApplicationLaunchTemplate
+      Tags: 
+        Name: !Sub ${Project}-${Stage}-${Component}-application-launch-template-id-param
+
+  ApplicationLaunchTemplateLatestVersionParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub The SSM parameter that stores ${Project}-${Stage}-${Component} the latest version no. of app launch template
+      Name: !Sub /${Project}/${Stage}/${Component}/application-launch-template/latest-version
+      Tier: Standard
+      Type: String
+      Value: !GetAtt ApplicationLaunchTemplate.LatestVersionNumber
+      Tags: 
+        Name: !Sub ${Project}-${Stage}-${Component}-application-launch-template-latest-version-no
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InstanceRole
+        
+Outputs:
+  ApplicationLaunchTemplateId:
+    Description: The ID of the Application Launch Template
+    Value: !Ref ApplicationLaunchTemplate
+  ApplicationLaunchTemplateIdParamName:
+    Description: The name of the SSM parameter that stores id of the launch template
+    Value: !Ref ApplicationLaunchTemplateIdParam
+  ApplicationLaunchTemplateLatestVersion:
+    Description: The ID of the Application Launch Template
+    Value: !GetAtt ApplicationLaunchTemplate.LatestVersionNumber
+  ApplicationLaunchTemplateLatestVersionParamName:
+    Description: The name of the SSM parameter that stores latest version of the launch template
+    Value: !Ref ApplicationLaunchTemplateLatestVersionParam

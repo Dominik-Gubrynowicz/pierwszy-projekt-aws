@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template for the application instance permissions
+
+Parameters: 
+  #Project params
+  Project:
+    Description: Name of the project
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,20}$
+  Component:
+    Description: Name of the component
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
+  Stage:
+    Description: Stage Name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{2,15}$
+  #Credentials params
+  DbAppCredentialsSecretArn:
+    Description: ARN of the secret that stores db app credentials
+    Type: AWS::SSM::Parameter::Value<String>
+  #S3 buckets params
+  S3MemesBucket:
+    Description: Reference to the s3 Memes Bucket
+    Type: AWS::SSM::Parameter::Value<String>
+  S3PicturesBucket:
+    Description: Reference to the s3 Pictures Bucket
+    Type: AWS::SSM::Parameter::Value<String>
+  S3ConfigBucket:
+    Description: Reference to the s3 Config Bucket
+    Type: AWS::SSM::Parameter::Value<String>
+
+Resources:
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: ApplicationPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+                #s3 memes policy
+                - Sid: S3Memes
+                  Effect: Allow
+                  Action: 
+                    - s3:PutObject
+                    - s3:ListBucket
+                    - s3:GetObject
+                  Resource: 
+                    - !Sub arn:aws:s3:::${S3MemesBucket}/*
+                    - !Sub arn:aws:s3:::${S3MemesBucket}
+                #s3 pictures policy
+                - Sid: S3Pictures
+                  Effect: Allow
+                  Action: 
+                    - s3:ListBucket
+                    - s3:GetObject
+                  Resource: 
+                    - !Sub arn:aws:s3:::${S3PicturesBucket}/*
+                    - !Sub arn:aws:s3:::${S3PicturesBucket}
+                #s3 config policy
+                - Sid: S3Config
+                  Effect: Allow
+                  Action: 
+                    - s3:ListBucket
+                    - s3:GetObject
+                  Resource: 
+                    - !Sub arn:aws:s3:::${S3ConfigBucket}/*
+                    - !Sub arn:aws:s3:::${S3ConfigBucket}
+                #SSM + Secrets manager
+                - Sid: GetSSMParams
+                  Effect: Allow
+                  Action:
+                    - ssm:GetParameter
+                  Resource:
+                    - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${Project}/${Stage}/${Component}/*
+                - Sid: GetSecretValue
+                  Effect: Allow
+                  Action:
+                    - secretsmanager:GetSecretValue
+                  Resource:
+                    - !Ref DbAppCredentialsSecretArn
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-app-instance-role
+
+  InstanceRoleParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} app instance role
+      Name: !Sub /${Project}/${Stage}/${Component}/application-instance-role/name
+      Tier: Standard
+      Type: String
+      Value: !Ref InstanceRole
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-app-instance-role-name
+
+Outputs:
+  InstanceRole:
+    Description: The instance role name
+    Value: !Ref InstanceRole
+  InstanceRoleParamName:
+    Description: The name of the SSM parameter where the name of the instance role is stored
+    Value: !Ref InstanceRoleParam

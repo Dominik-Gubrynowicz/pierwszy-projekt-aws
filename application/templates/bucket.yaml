@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template for application s3 buckets
+
+Parameters:
+  #Project params
+  Project:
+    Description: Name of the project
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,20}$
+  Component:
+    Description: Name of the component
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
+  Stage:
+    Description: Stage Name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{2,15}$
+  #Bucket info
+  BucketFunction:
+    Description: Function of the bucket
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
+
+Resources: 
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties: 
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-${BucketFunction}-bucket
+
+  S3BucketNameParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: The ssm parameter that stores the name of s3 bucket
+      Name: !Sub /${Project}/${Stage}/${Component}/${BucketFunction}-bucket/name
+      Tier: Standard
+      Type: String
+      Value: !Ref S3Bucket
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-${BucketFunction}-bucket-name
+
+Outputs:
+  S3BucketName:
+    Value: !Ref S3Bucket
+    Description: S3 Bucket name
+  S3BucketNameParam:
+    Value: !Ref S3BucketNameParam
+    Description: The name of the SSM parameter where the name of s3 bucket is stored

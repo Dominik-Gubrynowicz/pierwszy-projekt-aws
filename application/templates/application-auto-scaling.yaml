@@ -1,0 +1,171 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template for application autoscaling group
+
+Parameters: 
+  #Project params
+  Project:
+    Description: Name of the project
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,20}$
+  Component:
+    Description: Name of the component
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
+  Stage:
+    Description: Stage Name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{2,15}$
+  #Autoscaling options
+  DesiredCapacity:
+    Description: Desired capacity of autoscaling group
+    Type: String
+    Default: "1"
+  MaxSize:
+    Description: Max capacity of the ASG
+    Type: String
+    Default: "2"
+  MinSize:
+    Description: Min capacity of the ASG
+    Type: String
+    Default: "1"
+  #Launch template params
+  LaunchTemplateId:
+    Description: The reference to the SSM parameter that stores the id of launch template
+    Type: AWS::SSM::Parameter::Value<String>
+  LaunchTemplateVersion:
+    Description: The launch template version
+    Type: String
+    Default: ''
+  LaunchTemplateLatestVersion:
+    Description: The reference to the SSM parameter that stores latest version of launch template
+    Type: AWS::SSM::Parameter::Value<String>
+  #Network
+  PrivateSubnetAId:
+    Description: The reference to the SSM parameter that stores the id of the private subnet A
+    Type: AWS::SSM::Parameter::Value<String> 
+  PrivateSubnetBId:
+    Description: The reference to the SSM parameter that stores the id of the private subnet B
+    Type: AWS::SSM::Parameter::Value<String> 
+  LoadBalancerArn:
+    Description: The reference to the SSM parameter that stores the id of the load balancer
+    Type: AWS::SSM::Parameter::Value<String> 
+  VPCId:
+    Description: The reference to the SSM parameter that stores the id of the VPC
+    Type: AWS::SSM::Parameter::Value<String> 
+  #App settings
+  ApplicationPort:
+    Description: App port
+    Type: String
+
+Conditions:
+  UseProvidedTemplateVersion: !Not [ !Equals [ !Ref LaunchTemplateVersion, '' ] ]
+
+Resources: 
+  ApplicationAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: !Ref DesiredCapacity
+      HealthCheckGracePeriod: 300
+      HealthCheckType: ELB
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplateId
+        Version: !If
+          - UseProvidedTemplateVersion
+          - !Ref LaunchTemplateVersion
+          - !Ref LaunchTemplateLatestVersion
+      MaxSize: !Ref MaxSize
+      MinSize: !Ref MinSize
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnetAId
+        - !Ref PrivateSubnetBId
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-app-autoscaling-group
+          PropagateAtLaunch: false
+
+  #Scale out resources
+  ScaleOutPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: 
+        Ref: ApplicationAutoScalingGroup
+      Cooldown: "300"
+      ScalingAdjustment: 1
+
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      Period: 300
+      Statistic: Average
+      Threshold: 70
+      AlarmActions:
+        - !Ref ScaleOutPolicy
+      AlarmDescription: High CPU alarm to trigger scale out policy on ASG
+      Dimensions: 
+        - Name: AutoScalingGroupName
+          Value:
+            Ref: ApplicationAutoScalingGroup
+
+
+  #Scale in resources
+  ScaleInPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: 
+        Ref: ApplicationAutoScalingGroup
+      Cooldown: "300"
+      ScalingAdjustment: -1
+
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      ComparisonOperator: LessThanThreshold
+      EvaluationPeriods: 3
+      Period: 300
+      Statistic: Average
+      Threshold: 30
+      AlarmActions:
+        - !Ref ScaleInPolicy
+      AlarmDescription: High CPU alarm to trigger scale out policy on ASG
+      Dimensions: 
+        - Name: AutoScalingGroupName
+          Value:
+            Ref: ApplicationAutoScalingGroup
+
+  #Load balancer
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckPath: "/actuator/health"
+      Name: !Sub ${Project}-${Stage}-tg
+      Port: !Ref ApplicationPort
+      Protocol: "HTTP"
+      VpcId: !Ref VPCId
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-application-tg
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions: # Required
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref LoadBalancerArn
+      Port: 80
+      Protocol: "HTTP"
+
+Outputs:
+  AutoScalingGroupName:
+    Description: Returns the name of the ASG
+    Value: !Ref ApplicationAutoScalingGroup

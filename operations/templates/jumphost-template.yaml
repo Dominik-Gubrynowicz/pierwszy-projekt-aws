@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: The launch template for jumphost
+
+Parameters:
+  #Project params
+  Project:
+    Description: Name of the project
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,20}$
+  Component:
+    Description: Name of the component
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
+  Stage:
+    Description: Stage Name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{2,15}$
+  #Jumphost settings
+  ImageId:
+    Description: The reference to the SSM parameter that stores the AMI of the jumphost instance
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+  InstanceType:
+    Description: Jumphost instance type
+    Type: String
+    Default: t2.micro
+  KeyName:
+    Description: The name of the ssh key
+    Type: String
+  #Network settings
+  JumphostSGId: 
+    Description: The reference to the SSM parameter that stores jumphost sg id
+    Type: AWS::SSM::Parameter::Value<String>
+
+Resources: 
+  #Launch template
+  JumpHostLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${Project}-${Stage}-${Component}-jumphost-launch-template
+      LaunchTemplateData: 
+        IamInstanceProfile:
+          Name: !Ref JumpHostInstanceProfile
+        KeyName: !Ref KeyName
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        SecurityGroupIds:
+          - !Ref JumphostSGId
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub ${Project}-${Stage}-${Component}-jump-host-instance
+        UserData: 
+          Fn::Base64: |
+            #!/bin/bash
+            sudo yum update -y
+            sudo amazon-linux-extras enable postgresql11
+            sudo yum clean metadata
+            sudo yum install postgresql -y
+            sudo yum install jq -y
+
+  #Launch template params
+  JumpHostLaunchTemplateIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} JumpHost template id
+      Name: !Sub /${Project}/${Stage}/${Component}/jumphost-template/id
+      Tier: Standard
+      Type: String
+      Value: !Ref JumpHostLaunchTemplate
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-jump-host-template-id
+  
+  JumpHostLaunchTemplateLatestVersionParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} JumpHost template latest version
+      Name: !Sub /${Project}/${Stage}/${Component}/jumphost-template/latest-version
+      Tier: Standard
+      Type: String
+      Value: !GetAtt JumpHostLaunchTemplate.LatestVersionNumber
+      Tags:
+        Name: !Sub  ${Project}-${Stage}-${Component}-jump-host-template-latest-version
+
+  #IAM jumphost resources
+  JumpHostInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref JumpHostInstanceRole
+
+  JumpHostInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: JumpHostPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: GetSecretValue
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:ListSecretVersionIds
+                  - secretsmanager:ListSecrets
+                Resource:
+                  !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Project}/${Stage}/*
+
+Outputs:
+  JumpHostLaunchTemplateId:
+    Description: The id of the jump host launch template
+    Value: !Ref JumpHostLaunchTemplate
+  JumpHostLaunchTemplateIdParamName:
+    Description: The name of the SSM param that stores the id of the jump host launch template
+    Value: !Ref JumpHostLaunchTemplateIdParam
+  JumpHostLaunchTemplateLatestVersion:
+    Description: The latest version of the jump host launch template
+    Value: !GetAtt JumpHostLaunchTemplate.LatestVersionNumber
+  JumpHostLaunchTemplateLatestVersionParamName:
+    Description: The name of the SSM param that stores the id of the jump host launch template
+    Value: !Ref JumpHostLaunchTemplateLatestVersionParam

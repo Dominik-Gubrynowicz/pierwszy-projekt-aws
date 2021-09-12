@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template for log bucket
+
+Parameters:
+  Project:
+    Description: Project name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,20}$
+  Component:
+    Description: Component name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
+  Stage:
+    Description: Stage name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{2,15}$
+
+Resources: 
+  S3LogBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties: 
+      AccessControl: LogDeliveryWrite
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-log-bucket
+
+  S3LogBucketNameParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Log Bucket Name
+      Name: !Sub /${Project}/${Stage}/${Component}/log-bucket/name
+      Tier: Standard
+      Type: String
+      Value: !Ref S3LogBucket
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-log-bucket-name
+
+  S3LogBucketArnParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: Stores ${Project}-${Stage}-${Component} Log Bucket Arn
+      Name: !Sub /${Project}/${Stage}/${Component}/log-bucket/arn
+      Tier: Standard
+      Type: String
+      Value: !GetAtt S3LogBucket.Arn
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-log-bucket-arn
+
+Outputs:
+  S3LogBucketName: 
+    Value: !Ref S3LogBucket
+    Description: The name of s3 log bucket
+  S3LogBucketParamName:
+    Value: !Ref S3LogBucketNameParam
+    Description: The name of SSM parameter where S3LogBucket name is stored
+  S3LogBucketArnParam:
+    Value: !Ref S3LogBucketArnParam
+    Description: The name of SSM parameter where S3LogBucket arn is stored

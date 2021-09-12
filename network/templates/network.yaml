@@ -1,0 +1,500 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Network template for VPC
+
+Parameters:
+  #Project params
+  Project:
+    Description: Name of the project
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,20}$
+  Component:
+    Description: Name of the component
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
+  Stage:
+    Description: Stage Name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{2,15}$
+
+  #Ip configurations
+  VpcCidrBlock:
+    Description: CIDR block for the VPC
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must be a valid IP CIDR range (x.x.x.x/x)
+
+  PublicSubnetACidrBlock:
+    Description: CIDR block for public subnet A
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must be a valid IP CIDR range (x.x.x.x/x)
+
+  PublicSubnetBCidrBlock:
+    Description: CIDR block for public subnet B
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must be a valid IP CIDR range (x.x.x.x/x)
+
+  PrivateSubnetACidrBlock:
+    Description: CIDR block for private subnet A
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must be a valid IP CIDR range (x.x.x.x/x)
+
+  PrivateSubnetBCidrBlock:
+    Description: CIDR block for private subnet B
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must be a valid IP CIDR range (x.x.x.x/x)
+
+  DataSubnetACidrBlock:
+    Description: CIDR block for data subnet A
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must be a valid IP CIDR range (x.x.x.x/x)
+  
+  DataSubnetBCidrBlock:
+    Description: CIDR block for data subnet B
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must be a valid IP CIDR range (x.x.x.x/x)
+
+  #Log bucket params
+  LogBucketArn:
+    Description: Log bucket arn from SSM
+    Type: AWS::SSM::Parameter::Value<String>
+
+Resources:
+
+  #VPC
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidrBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-vpc
+
+  VpcIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Vpc ID
+      Name: !Sub /${Project}/${Stage}/${Component}/vpc/id
+      Value: !Ref Vpc
+      Tier: Standard
+      Type: String
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-vpc-id
+  
+  #Flow log
+  FlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      LogDestination: !Sub ${LogBucketArn}/vpc-flow-logs/vpc
+      LogDestinationType: s3
+      ResourceId: !Ref Vpc
+      ResourceType: VPC
+      TrafficType: ALL  
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-flow-log
+
+  #Public subnets
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0 , !GetAZs '' ]
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnetACidrBlock
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-public-subnet-a
+
+  PublicSubnetAIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Public Subnet A Id
+      Name: !Sub /${Project}/${Stage}/${Component}/public-subnet-a/id
+      Tier: Standard
+      Type: String
+      Value: !Ref PublicSubnetA
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-public-subnet-a-id
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1 , !GetAZs '' ]
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnetBCidrBlock
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-public-subnet-b
+
+  PublicSubnetBIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Public Subnet B Id
+      Name: !Sub /${Project}/${Stage}/${Component}/public-subnet-b/id
+      Tier: Standard
+      Type: String
+      Value: !Ref PublicSubnetB
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-public-subnet-b-id
+
+  #Private subnets
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0 , !GetAZs '' ]
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnetACidrBlock
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-private-subnet-a
+
+  PrivateSubnetAIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Private Subnet A Id
+      Name: !Sub /${Project}/${Stage}/${Component}/private-subnet-a/id
+      Tier: Standard
+      Type: String
+      Value: !Ref PrivateSubnetA
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-private-subnet-a-id
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1 , !GetAZs '' ]
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnetBCidrBlock
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-private-subnet-b
+
+  PrivateSubnetBIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Private Subnet B Id
+      Name: !Sub /${Project}/${Stage}/${Component}/private-subnet-b/id
+      Tier: Standard
+      Type: String
+      Value: !Ref PrivateSubnetB
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-private-subnet-b-id
+  
+  #Data subnets
+  DataSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0 , !GetAZs '' ]
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref DataSubnetACidrBlock
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-data-subnet-a
+
+  DataSubnetAIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Data Subnet A Id
+      Name: !Sub /${Project}/${Stage}/${Component}/data-subnet-a/id
+      Tier: Standard
+      Type: String
+      Value: !Ref DataSubnetA
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-data-subnet-a-id 
+
+  DataSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1 , !GetAZs '' ]
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref DataSubnetBCidrBlock
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-data-subnet-b
+
+  DataSubnetBIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Data Subnet B Id
+      Name: !Sub /${Project}/${Stage}/${Component}/data-subnet-b/id
+      Tier: Standard
+      Type: String
+      Value: !Ref DataSubnetB
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-data-subnet-b-id  
+
+  #Network appliances 
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-network-gateway
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  #Public routing tables
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-public-route-table
+  
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteTableIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} PublicRouteTable Id
+      Name: !Sub /${Project}/${Stage}/${Component}/public-route-table/id
+      Tier: Standard
+      Type: String
+      Value: !Ref PublicRouteTable
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-public-route-table-id
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  # Private route tables
+
+  PrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-private-route-table-a
+
+  PrivateRouteTableAIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} PrivateRouteTableA Id
+      Name: !Sub /${Project}/${Stage}/${Component}/private-route-table-a/id
+      Tier: Standard
+      Type: String
+      Value: !Ref PrivateRouteTableA
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-private-route-table-a-id
+  
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTableA
+
+  PrivateRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-private-route-table-b
+
+  PrivateRouteTableBIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} PrivateRouteTableB Id
+      Name: !Sub /${Project}/${Stage}/${Component}/private-route-table-b/id
+      Tier: Standard
+      Type: String
+      Value: !Ref PrivateRouteTableB
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-private-route-table-b-id
+  
+  PrivateSubnetBRouteTableAssociation:
+    DependsOn:
+      - PrivateRouteTableB
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTableB
+
+  #Data routing tables
+
+  DataRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-data-route-table-a
+
+  DataRouteTableAIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} DataRouteTableA Id
+      Name: !Sub /${Project}/${Stage}/${Component}/data-route-table-a/id
+      Tier: Standard
+      Type: String
+      Value: !Ref DataRouteTableA
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-data-route-table-a-id
+  
+  DataSubnetARouteTableAssociation:
+    DependsOn:
+      - DataRouteTableA
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DataSubnetA
+      RouteTableId: !Ref DataRouteTableA
+
+  DataRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-data-route-table-b
+
+  DataRouteTableBIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} DataRouteTableB Id
+      Name: !Sub /${Project}/${Stage}/${Component}/data-route-table-b/id
+      Tier: Standard
+      Type: String
+      Value: !Ref DataRouteTableB
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-data-route-table-b-id
+  
+  DataSubnetBRouteTableAssociation:
+    DependsOn:
+      - DataRouteTableB
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DataSubnetB 
+      RouteTableId: !Ref DataRouteTableB
+
+Outputs:
+  #Vpc info
+  VpcId:
+    Description: The ID of VPC
+    Value: !Ref Vpc
+  VpcIdParamName:
+    Description: The name of the SSM parameter where the Id of VPC is stored
+    Value: !Ref VpcIdParam
+
+  #Public subnet A info
+  PublicSubnetAId:
+    Description: The ID of public subnet A
+    Value: !Ref PublicSubnetA
+  PublicSubnetAIdParamName:
+    Description: The name of the SSM parameter where the Id of public subnet A is stored
+    Value: !Ref PublicSubnetAIdParam
+  
+  #Public subnet B info
+  PublicSubnetBId:
+    Description: The ID of public subnet B
+    Value: !Ref PublicSubnetB
+  PublicSubnetBIdParamName:
+    Description: The name of the SSM parameter where the Id of public subnet B is stored
+    Value: !Ref PublicSubnetBIdParam
+
+  #Private subnet A info
+  PrivateSubnetAId:
+    Description: The ID of private subnet A
+    Value: !Ref PrivateSubnetA
+  PrivateSubnetAIdParamName:
+    Description: The name of the SSM parameter where the Id of private subnet A is stored
+    Value: !Ref PrivateSubnetAIdParam
+
+  #Private subnet B info
+  PrivateSubnetBId:
+    Description: The ID of private subnet B
+    Value: !Ref PrivateSubnetB
+  PrivateSubnetBIdParamName:
+    Description: The name of the SSM parameter where the Id of private subnet B is stored
+    Value: !Ref PrivateSubnetBIdParam 
+
+  #Data subnet A info
+  DataSubnetAId:
+    Description: The ID of data subnet A
+    Value: !Ref DataSubnetA
+  DataSubnetAIdParamName:
+    Description: The name of the SSM parameter where the Id of data subnet A is stored
+    Value: !Ref DataSubnetAIdParam
+
+  #Data subnet B info
+  DataSubnetBId:
+    Description: The ID of data subnet B
+    Value: !Ref DataSubnetB
+  DataSubnetBIdParamName:
+    Description: The name of the SSM parameter where the Id of data subnet B is stored
+    Value: !Ref DataSubnetBIdParam
+
+  #Public route table info
+  PublicRouteTableId:
+    Description: The ID of the public route table
+    Value: !Ref PublicRouteTable
+  PublicRouteTableIdParamName:
+    Description: The name of the SSM parameter where the Id of public route table is stored
+    Value: !Ref PublicRouteTableIdParam
+  
+  #Private route table A info
+  PrivateRouteTableAId:
+    Description: The ID of the private route table A
+    Value: !Ref PrivateRouteTableA
+  PrivateRouteTableAIdParamName:
+    Description: The name of the SSM parameter where the Id of private route table A is stored
+    Value: !Ref PrivateRouteTableAIdParam
+
+  #Private route table B info
+  PrivateRouteTableBId:
+    Description: The ID of the private route table B
+    Value: !Ref PrivateRouteTableB
+  PrivateRouteTableBIdParamName:
+    Description: The name of the SSM parameter where the Id of private route table B is stored
+    Value: !Ref PrivateRouteTableBIdParam
+
+  #Data route table A info
+  DataRouteTableAId:
+    Description: The ID of the data route table A
+    Value: !Ref DataRouteTableA
+  DataRouteTableAIdParamName:
+    Description: The name of the SSM parameter where the Id of data route table A is stored
+    Value: !Ref DataRouteTableAIdParam
+  
+  #Data route table B info
+  DataRouteTableBId:
+    Description: The ID of the data route table B
+    Value: !Ref DataRouteTableB
+  DataRouteTableAIdParamName:
+    Description: The name of the SSM parameter where the Id of data route table B is stored
+    Value: !Ref DataRouteTableBIdParam

@@ -1,0 +1,228 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template for database deployment
+
+Parameters: 
+  #Project params
+  Project:
+    Description: Name of the project
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,20}$
+  Component:
+    Description: Name of the component
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
+  Stage:
+    Description: Stage Name
+    Type: String
+    AllowedPattern: ^[a-z][a-zA-Z0-9-]{2,15}$
+  
+  #Database config
+  DatabaseName:
+    Description: Name of the database
+    Type: String
+
+  #Network config
+  DataSubnetA:
+    Description: Id of data subnet A form SSM
+    Type: AWS::SSM::Parameter::Value<String>
+  DataSubnetB:
+    Description: Id of data subnet B form SSM
+    Type: AWS::SSM::Parameter::Value<String>
+  DataSG:
+    Description: The id of data SG from SSM
+    Type: AWS::SSM::Parameter::Value<String>
+
+Resources: 
+  #Db instance
+  DbInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: '10'
+      DBInstanceClass: db.t2.micro
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: false
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      BackupRetentionPeriod: 0
+      DBInstanceIdentifier: !Sub ${Project}-${Stage}-${Component}-db
+      DBName: !Ref DatabaseName 
+      DBSubnetGroupName:  !Ref DbSubnetGroup
+      Engine: postgres
+      EngineVersion: '11.5'
+      MasterUsername: !Sub '{{resolve:secretsmanager:${Project}/${Stage}/${Component}/rds/masteruser-secret:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${Project}/${Stage}/${Component}/rds/masteruser-secret:SecretString:password}}'
+      MultiAZ: false
+      Port: '5432'
+      PubliclyAccessible: false
+      StorageEncrypted: false
+      StorageType: gp2
+      VPCSecurityGroups:
+        - !Ref DataSG
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-db
+
+  #Db parameters
+  DbEndpointAddressParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} DbEndpoint address
+      Name: !Sub /${Project}/${Stage}/${Component}/data/endpoint
+      Tier: Standard
+      Type: String
+      Value: !GetAtt DbInstance.Endpoint.Address
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-db-endpoint-address
+
+  DbNameParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Db Name
+      Name: !Sub /${Project}/${Stage}/${Component}/data/name
+      Tier: Standard
+      Type: String
+      Value: !Ref DatabaseName
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-db-name
+
+  DbEndpointPortParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} DbEndpoint port
+      Name: !Sub /${Project}/${Stage}/${Component}/data/port
+      Tier: Standard
+      Type: String
+      Value: !GetAtt DbInstance.Endpoint.Port
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-db-endpoint-port
+
+  DbInstanceNameParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} Db instance name
+      Name: !Sub /${Project}/${Stage}/${Component}/data/instance-name
+      Tier: Standard
+      Type: String
+      Value: !Ref DbInstance
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-db-instance-name
+
+  #Db credentials
+  DbCredentials:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub Username for ${Project}-${Stage}-${Component}-db
+      Name: !Sub ${Project}/${Stage}/${Component}/rds/masteruser-secret
+      GenerateSecretString:
+        ExcludeCharacters: '"@/\'
+        ExcludePunctuation: true
+        GenerateStringKey: password
+        PasswordLength: 15
+        SecretStringTemplate: '{"username": "masteruser"}'
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-db-credentials
+
+  DbCredentialsArnParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} db credentials arn
+      Name: !Sub /${Project}/${Stage}/${Component}/data/credentials/arn
+      Tier: Standard
+      Type: String
+      Value: !Ref DbCredentials
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-db-credentials-arn
+  
+  DbCredentialsAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref DbCredentials
+      TargetId: !Ref DbInstance
+      TargetType: AWS::RDS::DBInstance
+
+  #Db app credentials
+  DbAppCredentials:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub Username for ${Project}-${Stage}-${Component}-db app user
+      Name: !Sub ${Project}/${Stage}/${Component}/rds/app-user-secret
+      GenerateSecretString:
+        ExcludeCharacters: '"@/\'
+        ExcludePunctuation: true
+        GenerateStringKey: password
+        PasswordLength: 15
+        SecretStringTemplate: '{"username": "appuser"}'
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-db-app-credentials
+
+  DbAppCredentialsArnParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Stores ${Project}-${Stage}-${Component} db app credentials arn
+      Name: !Sub /${Project}/${Stage}/${Component}/database/app-credentials/arn
+      Tier: Standard
+      Type: String
+      Value: !Ref DbAppCredentials
+      Tags:
+        Name: !Sub ${Project}-${Stage}-${Component}-db-app-credentials-arn
+  
+  DbAppCredentialsAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref DbAppCredentials
+      TargetId: !Ref DbInstance
+      TargetType: AWS::RDS::DBInstance
+
+  # Subnet group
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub Subnet group for ${Project}-${Stage}-${Component}-db instance
+      SubnetIds:
+        - !Ref DataSubnetA
+        - !Ref DataSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${Stage}-${Component}-db-subnet
+
+Outputs:
+  #Db endpoint info
+  DbEndpointAddress:
+    Value: !GetAtt DbInstance.Endpoint.Address
+    Description: Database endpoint address
+  DbEndpointAddressParam:
+    Value: !Ref DbEndpointAddressParam
+    Description: The name of the SSM parameter, where address of the db endpoint is stored
+  DbEndpointPort:
+    Value: !GetAtt DbInstance.Endpoint.Port
+    Description: Database endpoint port
+  DbEndpointPortParam:
+    Value: !Ref DbEndpointPortParam
+    Description: The name of the SSM parameter, where the port of the db endpoint is stored
+  #Db names info
+  DbName:
+    Value: !Ref DatabaseName
+    Description: The name of the databsase
+  DbNameParamName:
+    Value: !Ref DbNameParam
+    Description: The name of the SSM parameter, where the name of the db is stored
+  DbInstanceName:
+    Value: !Ref DbInstance
+    Description: The name of db instance 
+  DbInstanceNameParamName:
+    Value: !Ref DbInstanceNameParam
+    Description: The name of the SSM parameter, where the name of the db instance is stored
+  #Db credentials info
+  DbCredentialsArn:
+    Value: !Ref DbCredentials
+    Description: The ARN of the db credentials 
+  DbCredentialsArnParamName:
+    Value: !Ref DbCredentialsArnParam
+    Description: The name of the SSM parameter, where the ARN of the db credentials is stored
+  DbAppCredentialsArn:
+    Value: !Ref DbAppCredentials
+    Description: The ARN of the db app credentials
+  DbAppCredentialsArnParamName:
+    Value: !Ref DbAppCredentialsArnParam
+    Description: The name of the SSM parameter, where the ARN of the app credentials is stored

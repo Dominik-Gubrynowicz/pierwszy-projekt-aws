@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: The template for Aplication instance
+
+Parameters: 
+  #Launch template settings
+  LaunchTemplateId:
+    Description: The ID of the launch template from SSM
+    Type: AWS::SSM::Parameter::Value<String>
+  LaunchTemplateVersion:
+    Description: Launch template version
+    Type: String
+    Default: ''
+  LaunchTemplateLatestVersion:
+    Description: The latest version of the launch template
+    Type: AWS::SSM::Parameter::Value<String>
+  #Instance networking settings
+  PrivateSubnetId:
+    Description: Reference to the PrivateSubnetId from the SSM
+    Type: AWS::SSM::Parameter::Value<String>
+
+Conditions:
+  UseProvidedTemplateVersion: !Not [ !Equals [ !Ref LaunchTemplateVersion, ''] ]
+
+Resources: 
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplateId
+        Version: !If
+          - UseProvidedTemplateVersion
+          - !Ref LaunchTemplateVersion
+          - !Ref LaunchTemplateLatestVersion
+      SubnetId: !Ref PrivateSubnetId
+
+Outputs:
+  InstanceId:
+    Description: The ID of the Instance
+    Value: !Ref Instance
